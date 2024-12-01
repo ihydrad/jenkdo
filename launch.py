@@ -9,11 +9,16 @@ import click
 import jinja2
 import requests
 from termcolor import colored
+from urllib.parse import urljoin
 
 
-JENKINS_URL = ''
-AUTH = None
-# AUTH = requests.auth.HTTPBasicAuth('username', 'password')
+JENKINS_URL = 'https://jenkins.navi.2gis.one'
+BUILD_URL = '{}/job/navi-testing/job/debug/job/{}'
+AUTH = requests.auth.HTTPBasicAuth('d.amerkhanov', '11395f274b168d8a6885c7fc21b033eb04')
+
+
+def get_parent(url):
+    return urljoin(url, '..')
 
 
 @click.command()
@@ -98,11 +103,15 @@ def main(jenkinsfile, templatefile, keep, verbose, yes, force):
 
 
 class JenkinsJob:
+    jenkins_url = JENKINS_URL
+    build_url = '{}/job/navi-testing/job/debug/job/{}'
+
     def __init__(self, jenkinsfile, template):
         self.name = (
             os.path.basename(jenkinsfile.name)
                 .replace('.groovy', '')
                 .replace('.jenkinsfile', ''))
+        self.url = self.build_url.format(self.jenkins_url, self.name)
 
         self.jenkinsfile_content = jenkinsfile.read()
         jenkinsfile.close()
@@ -120,10 +129,9 @@ class JenkinsJob:
         msg = '> Validating...'
         print(colored(msg, 'green'))
 
-        url = '{}/pipeline-model-converter/validate'.format(JENKINS_URL)
         data = {'jenkinsfile': self.jenkinsfile_content}
         res = requests.post(
-            url,
+            '{}/pipeline-model-converter/validate'.format(JENKINS_URL),
             auth=AUTH,
             data=data)
 
@@ -134,9 +142,7 @@ class JenkinsJob:
     def create(self, force):
         '''Create this taks on server'''
         if force:
-            url = ('{}/job/debug/job/{}/config.xml'
-                .format(JENKINS_URL, self.name))
-            res = requests.get(url, auth=AUTH)
+            res = requests.get(f'{self.url}/config.xml', auth=AUTH)
             if res.status_code != 404:
                 self.delete()
 
@@ -146,7 +152,7 @@ class JenkinsJob:
 
         headers = {'Content-Type': 'text/xml'}
         params = {'name': self.name}
-        url = '{}/job/debug/createItem'.format(JENKINS_URL)
+        url = f'{get_parent(self.url)}createItem'
         res = requests.post(
             url,
             headers=headers,
@@ -171,8 +177,7 @@ class JenkinsJob:
 
     def delete(self):
         '''Delete this taks on server'''
-        url = '{}/job/debug/job/{}/doDelete'.format(JENKINS_URL, self.name)
-        res = requests.post(url, auth=AUTH)
+        res = requests.post(f'{self.url}/doDelete', auth=AUTH)
 
         if res.status_code != 200:
             msg = "> Unable to delete '{}' job".format(self.name)
@@ -193,7 +198,7 @@ class JenkinsJob:
         msg = '> Starting...'
         print(colored(msg, 'green'))
 
-        url = '{}/job/debug/job/{}/build'.format(JENKINS_URL, self.name)
+        url = f'{self.url}/build'
         res = requests.post(url, auth=AUTH)
 
         if res.status_code != 201:
